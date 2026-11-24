@@ -157,6 +157,8 @@ def main():
     ap.add_argument("--proxy", help="覆盖系统代理，例如 http://127.0.0.1:1082")
     ap.add_argument("--description", default="在 Touch Bar 上常驻显示 WorkBuddy 任务状态的 macOS 小工具")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--update", action="store_true",
+                    help="仓库已有内容时，在现有提交之上追加一个提交（不丢远端历史）")
     args = ap.parse_args()
 
     if "/" not in args.repo:
@@ -212,6 +214,7 @@ def main():
     # 所以先用 Contents API 写一个占位文件把初始提交建出来；该提交随后会被我们
     # 自己的孤儿提交顶掉（ref 强制指向新提交），占位文件不会出现在最终树里。
     st_ref, ref_info = client.call("GET", "/repos/%s/%s/git/ref/heads/main" % (owner, name))
+    parent_sha = None
     if st_ref == 200:
         sha = ref_info["object"]["sha"]
         _, ci = client.call("GET", "/repos/%s/%s/git/commits/%s" % (owner, name, sha))
@@ -222,10 +225,11 @@ def main():
             if ti:
                 paths = [e["path"] for e in ti.get("tree", [])]
         unexpected = set(paths) - {".workbar-bootstrap"}
-        if unexpected:
-            die("仓库里已有 %d 项内容，为避免覆盖已停止。请确认后手动清空或换个仓库。"
-                % len(unexpected))
-        print("[push] 仓库当前只有引导提交，可以覆盖")
+        if unexpected and not args.update:
+            die("仓库里已有 %d 项内容。确实要覆盖就用 --update（会在现有提交之上追加一个提交，"
+                "不会丢历史）。" % len(unexpected))
+        parent_sha = sha
+        print("[push] 在现有提交 %s 之上追加提交" % sha[:7])
     else:
         print("[push] 空仓库：先引导出首个提交（否则建 blob 会被 409 拒绝）")
         st, body = client.call(
@@ -266,15 +270,19 @@ def main():
 
     count = subprocess.check_output(["git", "rev-list", "--count", "HEAD"]).decode().strip()
     last = subprocess.check_output(["git", "log", "-1", "--pretty=%s"]).decode().strip()
-    message = (
-        "Initial commit: WorkBar\n\n"
-        "在 Touch Bar 上常驻显示 WorkBuddy 的任务状态（Swift / AppKit，零第三方依赖）。\n\n"
-        "注：本提交由 GitHub REST API 上传，本地 %s 个提交的历史被压缩为单个初始提交\n"
-        "（本机到 github.com 的 git 传输不通，只能走 api.github.com）。\n"
-        "最后一个本地提交：%s\n"
-    ) % (count, last)
+    if parent_sha:
+        message = "Update: %s\n\n同步本地工作树（本地共 %s 个提交）。\n" % (last, count)
+    else:
+        message = (
+            "Initial commit: WorkBar\n\n"
+            "在 Touch Bar 上常驻显示 WorkBuddy 的任务状态（Swift / AppKit，零第三方依赖）。\n\n"
+            "注：本提交由 GitHub REST API 上传，本地 %s 个提交的历史被压缩为单个初始提交\n"
+            "（本机到 github.com 的 git 传输不通，只能走 api.github.com）。\n"
+            "最后一个本地提交：%s\n"
+        ) % (count, last)
     st, commit = client.call("POST", "/repos/%s/%s/git/commits" % (owner, name),
-                             {"message": message, "tree": tree["sha"], "parents": []})
+                             {"message": message, "tree": tree["sha"],
+                              "parents": [parent_sha] if parent_sha else []})
     if st != 201:
         die("建 commit 失败（%s）：%s" % (st, commit.get("raw", "")))
 
@@ -282,7 +290,7 @@ def main():
     # 直接强制把 main 指到我们这个孤儿提交上 —— 最终仓库里只有一个提交，
     # 引导用的占位文件随之消失（它不在我们的 tree 里）。
     st, ref = client.call("PATCH", "/repos/%s/%s/git/refs/heads/main" % (owner, name),
-                          {"sha": commit["sha"], "force": True})
+                          {"sha": commit["sha"], "force": parent_sha is None})
     if st not in (200, 201):
         # 极端情况：main 还不存在（引导那步被跳过），退回普通建 ref。
         st, ref = client.call("POST", "/repos/%s/%s/git/refs" % (owner, name),

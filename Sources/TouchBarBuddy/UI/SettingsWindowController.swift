@@ -531,9 +531,9 @@ final class SettingsWindowController: NSWindowController {
 
     /// 项目 GitHub 地址（关于页展示，可点击）。
     ///
-    /// - Note: 仓库创建并推送后填入 `https://github.com/<用户>/WorkBar`；
-    ///   为空时关于页不显示这一行，避免给出点不开的假链接。
-    private static let gitHubURL = ""
+    /// - Note: 为空时关于页不显示这一行，避免给出点不开的假链接。
+    ///   该 URL 已实测可访问（仓库公开、默认分支 main）。
+    private static let gitHubURL = "https://github.com/Miragic/WorkBar"
 
     private func buildAboutView() {
         let card = makeCard(in: aboutView,
