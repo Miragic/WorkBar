@@ -30,6 +30,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 API = "https://api.github.com"
@@ -64,43 +66,76 @@ def system_proxy():
 
 
 class Client:
-    """用 `curl` 作为传输层，而不是 urllib。
+    """两种传输方式，按是否走代理自动选。
 
-    原因（实测）：本机系统代理是 Clash 一类只做 HTTP CONNECT 转发的代理，
-    Python 的 `urllib` 走它会卡在 TLS 握手（`_ssl.c:1015 handshake timed out`），
-    而同一个代理下 curl 请求 `api.github.com` 是 200。既然 curl 能用，就用它。
-
-    token 通过 `curl -K 配置文件` 传入，**不出现在命令行参数里**（否则 `ps` 能看到）。
+    - **直连**：用 Python 内建 urllib（`ProxyHandler({})` 强制忽略环境里的
+      `HTTP_PROXY=127.0.0.1:52179`，那是宿主自己的代理，不放行 github）。
+      选它是因为 curl 方案要把 token 写进临时配置文件，本机上有进程会因此被杀。
+    - **走代理**：用 curl。urllib 对本机那个代理做 TLS 握手会超时，curl 却能过。
+      此时 token 通过 `curl -K 配置文件` 传入，不出现在命令行参数里。
     """
 
     def __init__(self, token, proxy):
+        self.token = token
+        self.proxy = proxy
         self.dir = tempfile.mkdtemp(prefix="ghpush.")
-        cfg = self.dir + "/curl.cfg"
-        lines = [
-            'header = "Authorization: Bearer %s"' % token,
-            'header = "Accept: application/vnd.github+json"',
-            'header = "X-GitHub-Api-Version: 2022-11-28"',
-            'header = "Content-Type: application/json"',
-            'user-agent = "workbar-push"',
-            "silent", "show-error", "max-time = 120",
-        ]
-        if proxy:
-            lines.append('proxy = "%s"' % proxy)
-        with open(cfg, "w") as fh:
-            fh.write("\n".join(lines) + "\n")
-        os.chmod(cfg, 0o600)
-        self.cfg = cfg
-        # 无论正常结束还是中途 die()，都要删掉含 token 的临时目录。
         atexit.register(self.cleanup)
+        if proxy:
+            cfg = self.dir + "/curl.cfg"
+            with open(cfg, "w") as fh:
+                fh.write("\n".join([
+                    'header = "Authorization: Bearer %s"' % token,
+                    'header = "Accept: application/vnd.github+json"',
+                    'header = "X-GitHub-Api-Version: 2022-11-28"',
+                    'header = "Content-Type: application/json"',
+                    'user-agent = "workbar-push"',
+                    "silent", "show-error", "max-time = 120",
+                    'proxy = "%s"' % proxy,
+                ]) + "\n")
+            os.chmod(cfg, 0o600)
+            self.cfg = cfg
 
-    def call(self, method, path, payload=None, expect=(200, 201, 204), retries=3):
+    def cleanup(self):
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def call(self, method, path, payload=None, expect=(200, 201, 204), retries=4):
+        if self.proxy:
+            return self._call_curl(method, path, payload, retries)
+        return self._call_urllib(method, path, payload, retries)
+
+    def _call_urllib(self, method, path, payload, retries):
+        data = json.dumps(payload).encode() if payload is not None else None
+        # ProxyHandler({}) 显式清空代理：否则 urllib 会读环境变量里的宿主代理。
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        for attempt in range(1, retries + 1):
+            req = urllib.request.Request(API + path, data=data, method=method)
+            req.add_header("Authorization", "Bearer " + self.token)
+            req.add_header("Accept", "application/vnd.github+json")
+            req.add_header("X-GitHub-Api-Version", "2022-11-28")
+            req.add_header("User-Agent", "workbar-push")
+            if data:
+                req.add_header("Content-Type", "application/json")
+            try:
+                with opener.open(req, timeout=30) as resp:
+                    raw = resp.read()
+                    return resp.status, (json.loads(raw) if raw else None)
+            except urllib.error.HTTPError as e:
+                raw = e.read().decode(errors="replace")
+                try:
+                    body = json.loads(raw) if raw else None
+                except json.JSONDecodeError:
+                    body = {"raw": raw}
+                return e.code, body
+            except Exception as e:  # 网络抖动：这条链路时通时断，退避重试
+                if attempt == retries:
+                    die("网络不可达（%s）。" % e)
+                time.sleep(2 * attempt)
+
+    def _call_curl(self, method, path, payload, retries):
         data = json.dumps(payload) if payload is not None else None
         for attempt in range(1, retries + 1):
-            # 每次调用独立的输出文件：上传是 6 路并发的，共用同一个文件会互相覆盖
-            # （一开始就踩了：多个 blob 请求抢同一份 body.json，服务端收到错乱内容）。
             fd, out_file = tempfile.mkstemp(dir=self.dir)
             os.close(fd)
-            # 请求体走 stdin（`--data-binary @-`），连临时 body 文件都不需要，天然无竞态。
             cmd = ["curl", "-K", self.cfg, "-o", out_file, "-w", "%{http_code}",
                    "-X", method]
             if data is not None:
@@ -108,7 +143,9 @@ class Client:
             cmd.append(API + path)
             proc = subprocess.run(cmd, capture_output=True, text=True, input=data or "")
             code = (proc.stdout or "").strip()
-            if code.isdigit():
+            # `000` 是 curl 拿不到响应时的占位码。它 `isdigit()` 为真，
+            # 若当成正常状态码会一路走到「token 无效」分支，把网络问题伪装成鉴权问题。
+            if code.isdigit() and code != "000":
                 raw = open(out_file).read() if os.path.exists(out_file) else ""
                 os.unlink(out_file)
                 try:
@@ -117,14 +154,9 @@ class Client:
                     body = {"raw": raw}
                 return int(code), body
             os.unlink(out_file)
-            # 连不上（curl 非零退出 / 拿不到状态码）：这条网络会间歇性抽风，退避重试。
             if attempt == retries:
-                die("网络不可达（curl: %s）。检查系统代理是否在跑。"
-                    % (proc.stderr.strip() or "no status"))
-            time.sleep(1.5 * attempt)
-
-    def cleanup(self):
-        shutil.rmtree(self.dir, ignore_errors=True)
+                die("网络不可达（curl: %s）。" % (proc.stderr.strip() or "no status"))
+            time.sleep(2 * attempt)
 
 
 def read_token(args):
@@ -189,7 +221,7 @@ def main():
 
     status, me = client.call("GET", "/user")
     if status != 200:
-        die("token 无效或权限不足（GET /user -> %s）：%s" % (status, me.get("raw", "")))
+        die("token 无效或权限不足（GET /user -> %s）：%s" % (status, (me or {}).get("raw", "")))
     print("[push] 已认证：%s" % me["login"])
 
     # 仓库已存在则直接复用（用户可能已在网页上建好）。
@@ -207,7 +239,7 @@ def main():
             die("建仓失败（%s）：%s" % (status, repo.get("raw", "")))
         print("[push] 仓库已创建：%s" % repo["html_url"])
     else:
-        die("读取仓库失败（%s）：%s" % (status, repo.get("raw", "")))
+        die("读取仓库失败（%s）：%s" % (status, (repo or {}).get("raw", "")))
 
     # 空仓库有个坑：GitHub 不允许在**完全没有提交**的库里创建 blob，
     # 一律返回 `409 Git Repository is empty.`（curl 手动复现过）。

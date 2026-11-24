@@ -79,10 +79,23 @@ Touch Bar 随 WorkBuddy 的状态自动切换：
 
 ### 环境要求
 
-- 带 Touch Bar 的 MacBook Pro，macOS 13+
-- WorkBuddy 安装在 `/Applications/WorkBuddy.app`
+- 带 Touch Bar 的 MacBook Pro（2016–2022 款；没有 Touch Bar 的机型用不了）
+- macOS 13 及以上（开发与实测环境是 macOS 15，13 / 14 未充分验证）
+- WorkBuddy 安装在 `/Applications/WorkBuddy.app`——WorkBar 只读它的本地数据，没装 WorkBuddy 就没有内容可显示
 
-### 安装
+### 下载安装（推荐，不用编译）
+
+1. 到 **[Releases](https://github.com/Miragic/WorkBar/releases/latest)** 下载 `WorkBar-0.1.0-macos-universal.zip`
+   （通用二进制，Apple Silicon 和 Intel 都能跑）
+2. 解压，把 `WorkBar.app` 拖进 `/Applications`
+3. 首次打开会被系统拦下（本项目没有 Apple 开发者账号、未做公证）。两种放行方式：
+   - Finder 里**右键点 WorkBar.app → 打开 → 再点「打开」**
+   - 或执行一次：`xattr -dr com.apple.quarantine /Applications/WorkBar.app`
+4. 按下一节「首次授权」给辅助功能权限，然后点菜单栏那条胶囊图标
+
+> 校验下载包：`shasum -a 256 WorkBar-0.1.0-macos-universal.zip`，值见对应 Release 说明。
+
+### 从源码构建
 
 ```bash
 git clone <repository-url> WorkBar
@@ -91,14 +104,20 @@ cd WorkBar
 open build/WorkBar.app
 ```
 
-> 本项目在这台机器上不能用 SwiftPM（Command Line Tools 的编译器与 `libPackageDescription` 版本不一致），构建用 `build-direct.sh`：swiftc 直编 + 签名 + 组装 .app。测试用 `./Scripts/run-tests.sh`。
+> 本机不能用 SwiftPM（Command Line Tools 的编译器与 `libPackageDescription` 版本不一致），构建用 `build-direct.sh`：swiftc 直编 + 签名 + 组装 .app。测试用 `./Scripts/run-tests.sh`。
+
+打发行包（通用二进制 + ad-hoc 签名 + zip，产物进 `dist/`）：
+
+```bash
+./Scripts/make-release.sh
+```
 
 ### 首次授权
 
 1. **辅助功能**（必需）：系统设置 → 隐私与安全性 → 辅助功能 → 打开 WorkBar。用于读取状态、点击选项、语音输入。
 2. **语音识别 / 麦克风**（使用语音时）：首次点击语音按钮时系统弹出。
 
-菜单栏 `⌘TB` 提供：辅助功能授权入口、打开 WorkBuddy、开机自启、退出。重复启动会自动激活已有实例。
+菜单栏那条胶囊图标提供：辅助功能授权入口、打开 WorkBuddy、开机自启、退出。重复启动会自动激活已有实例。
 
 ---
 
@@ -142,6 +161,7 @@ Touch Bar 跨 App 切换始终显示 WorkBar（用私有 API 常驻）。切回�
 - **语音输入暂搁置**：功能已实现（本地识别 + 注入 + 回读校验），但 Touch Bar 上长按手势与点击会打架，当前不开放「按住说话」。
 - **余额 / 成长计划 / 模型倍率**：WorkBuddy 本地无可用接口，不做弹窗读界面的替代方案，因此不显示。
 - **Control Strip 宽度**：系统不允许程序化收缩，留给本工具约 290pt。
+- **未做公证**：没有 Apple 开发者账号，发行包是 ad-hoc 签名，首次打开需要右键「打开」或清一次 quarantine 属性（见上文安装步骤）。
 - **常驻依赖私有 API**：`presentSystemModalTouchBar` 在 macOS 升级后可能失效。
 - **常驻显示的代价**：开启后有任务运行时屏幕不会自动熄灭（Touch Bar 亮灭跟随屏幕，系统没有只让 Touch Bar 常亮的公开接口）。
 

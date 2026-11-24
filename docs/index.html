@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WorkBar · 在 Touch Bar 上常驻显示 WorkBuddy 任务状态</title>
+<meta name="description" content="WorkBar 是一款 macOS 原生小工具，把 WorkBuddy 的任务标题、上下文占用、本轮积分与耗时常驻显示在 MacBook Pro 的 Touch Bar 上。">
+<style>
+  :root {
+    --bg: #0d0f12;
+    --panel: #16191e;
+    --line: #262b33;
+    --fg: #e8eaed;
+    --muted: #9aa3af;
+    --accent: #3ddc97;
+    --warn: #e8a33d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.7 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 0 24px 96px; }
+
+  header { padding: 72px 0 40px; text-align: center; }
+  h1 {
+    margin: 0 0 12px;
+    font-size: 40px;
+    letter-spacing: -0.02em;
+    font-weight: 700;
+  }
+  h1 .dot { color: var(--accent); }
+  .tagline {
+    margin: 0 auto;
+    max-width: 640px;
+    font-size: 17px;
+    color: var(--muted);
+  }
+  .badges { margin-top: 22px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .badge {
+    font-size: 12px;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 4px 12px;
+  }
+
+  .hero { margin: 36px 0 8px; }
+  .hero img { width: 100%; display: block; border-radius: 8px; border: 1px solid var(--line); }
+
+  h2 {
+    margin: 64px 0 8px;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+  }
+  .section-note { margin: 0 0 24px; color: var(--muted); font-size: 14px; }
+
+  figure { margin: 0 0 28px; }
+  figure img {
+    width: 100%;
+    display: block;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: #000;
+  }
+  figcaption {
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  figcaption b { color: var(--fg); font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; }
+  td code, p code, li code {
+    background: #1e232a;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+  }
+
+  pre {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  ul { padding-left: 20px; }
+  li { margin: 6px 0; color: var(--muted); }
+  li b { color: var(--fg); font-weight: 600; }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 20px 22px;
+    margin: 20px 0;
+  }
+
+  footer {
+    margin-top: 72px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>WorkBar<span class="dot">.</span></h1>
+    <p class="tagline">在 MacBook Pro 的 Touch Bar 上常驻显示 WorkBuddy 的任务状态 —— 不用切回窗口，就知道它在做什么、做到哪一步、有没有需要你确认。</p>
+    <div class="badges">
+      <span class="badge">macOS 原生 · Swift + AppKit</span>
+      <span class="badge">零第三方依赖</span>
+      <span class="badge">不弹窗 · 不抢焦点</span>
+    </div>
+  </header>
+
+  <div class="hero">
+    <img src="images/scene-working-detail-crop.png" alt="WorkBar 在 Touch Bar 上显示工作态详情">
+  </div>
+
+  <h2>状态显示</h2>
+  <p class="section-note">Touch Bar 随 WorkBuddy 的状态自动切换，宽度不足时按优先级保留最重要的信息。</p>
+
+  <figure>
+    <img src="images/scene-idle-crop.png" alt="空闲态">
+    <figcaption><b>空闲</b> · 今日完成数与积分消耗</figcaption>
+  </figure>
+  <figure>
+    <img src="images/scene-working-detail-crop.png" alt="工作态详情">
+    <figcaption><b>工作态详情</b> · 任务标题 + 模型 / 本轮积分 / 上下文 / 耗时</figcaption>
+  </figure>
+  <figure>
+    <img src="images/scene-multi-task-crop.png" alt="多任务">
+    <figcaption><b>多任务</b> · 标题带 <code>(1/2)</code> 序号，横滑切换，详情与序号一起跟着走</figcaption>
+  </figure>
+  <figure>
+    <img src="images/scene-pending-crop.png" alt="待确认态">
+    <figcaption><b>待确认</b> · 举手脸 + 「N 待确认」，等你处理的任务条</figcaption>
+  </figure>
+  <figure>
+    <img src="images/scene-compact-crop.png" alt="紧凑态">
+    <figcaption><b>紧凑态</b> · 一行标题 + 耗时，点任务条在紧凑 / 详情间切换</figcaption>
+  </figure>
+  <figure>
+    <img src="images/scene-context-warning-crop.png" alt="上下文占用警告">
+    <figcaption><b>上下文告警</b> · 占用达到 75% 变橙，提醒你该新开会话</figcaption>
+  </figure>
+  <figure>
+    <img src="images/scene-task-steps-crop.png" alt="任务步骤进度">
+    <figcaption><b>任务步骤</b> · 开启后追加 <code>3/8 当前在做什么</code> 与一条细进度条</figcaption>
+  </figure>
+  <figure>
+    <img src="images/scene-completed-crop.png" alt="已完成态">
+    <figcaption><b>已完成</b> · 完成脸 + 「N 待读」+ 已完成任务条</figcaption>
+  </figure>
+
+  <h2>交互</h2>
+  <table>
+    <thead><tr><th>操作</th><th>效果</th></tr></thead>
+    <tbody>
+      <tr><td>点摘要区</td><td>激活并跳转到 WorkBuddy</td></tr>
+      <tr><td>点任务条</td><td>切换紧凑 / 详情视图</td></tr>
+      <tr><td>横滑任务条</td><td>切换聚焦任务（多任务时标题带 <code>(1/2)</code> 序号）</td></tr>
+      <tr><td>在 WorkBuddy 里切换会话</td><td>Touch Bar 标题与详情自动跟随</td></tr>
+      <tr><td>点弹层 / 权限选项</td><td>等价于在 WorkBuddy 界面里按那个按钮</td></tr>
+      <tr><td>点系统栏 logo</td><td>用「×」关掉后，点它可重新打开</td></tr>
+    </tbody>
+  </table>
+
+  <h2>快速开始</h2>
+  <p class="section-note">需要带 Touch Bar 的 MacBook Pro，macOS 14 及以上。</p>
+<pre>git clone https://github.com/Miragic/WorkBar.git
+cd WorkBar
+./Scripts/build-direct.sh
+open build/WorkBar.app</pre>
+
+  <div class="card">
+    <b>设置面板</b><br>
+    菜单栏图标 → <code>设置</code>，可以按自己的习惯开关显示项、调整顺序，右侧有实时预览；还可切换「空闲统计口径」为今日累计或本轮消耗。
+  </div>
+
+  <h2>设计原则</h2>
+  <ul>
+    <li><b>无感呈现</b> —— 所有信息都从本地数据库读取，不弹窗、不抢焦点、不为了读一个数值打断你的操作。</li>
+    <li><b>诚实降级</b> —— 私有 API 缺失时显示不出就显示不出，不崩、不假装。</li>
+    <li><b>宽度就是预算</b> —— Touch Bar 可用宽度约 290pt，任何新增信息都要先算清吃多少 pt。</li>
+  </ul>
+
+  <h2>已知限制</h2>
+  <ul>
+    <li><b>常驻依赖私有 API</b> —— <code>presentSystemModalTouchBar</code>，macOS 大版本升级后可能失效。</li>
+    <li><b>仅适配 WorkBuddy</b> —— 状态归约与展示层已分层，但数据源目前只接了它。</li>
+    <li><b>「已完成」态需要未读标记</b> —— WorkBuddy 当前不写该字段，实际完成后会直接回到空闲。</li>
+    <li><b>语音输入暂搁置</b> —— 功能已实现，但 Touch Bar 上长按手势与点击会打架。</li>
+  </ul>
+
+  <footer>
+    <span>作者 <a href="https://github.com/Miragic">Miragic</a> · 个人项目，仅供学习交流</span>
+    <span><a href="https://github.com/Miragic/WorkBar">GitHub 仓库 →</a></span>
+  </footer>
+
+</div>
+</body>
+</html>
