@@ -100,8 +100,9 @@ codesign --verify --strict --verbose=2 "$APP_DIR" 2>&1 | tail -2
 
 echo "[release] 打包 zip ..."
 rm -f "$OUT"
-# ditto 而不是 zip：保留符号链接、扩展属性与可执行位，解压后 .app 结构才完整
-ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" "$OUT"
+# ditto 而不是 zip：保留符号链接与可执行位，解压后 .app 结构才完整
+# --norsrc/--noextattr：不加 __MACOSX/ 里的 AppleDouble 垃圾条目，解压出来干净
+ditto -c -k --norsrc --noextattr --keepParent "$APP_DIR" "$OUT"
 
 SIZE="$(du -h "$OUT" | awk '{print $1}')"
 SHA="$(shasum -a 256 "$OUT" | awk '{print $1}')"
