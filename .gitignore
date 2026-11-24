@@ -1,0 +1,18 @@
+# 构建产物（可由 ./Scripts/build-direct.sh 重新生成）
+build/
+.swiftpm/
+*.swiftmodule
+*.dylib
+
+# 临时诊断探针 / 截图（.verify 是本地排障用，不是项目源码）
+.verify/
+
+# 本地归档（早期实验性实现的备份，非当前代码）
+archive/
+
+# macOS
+.DS_Store
+*.swp
+
+# 日志
+*.log
